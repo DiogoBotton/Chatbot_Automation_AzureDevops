@@ -1,8 +1,7 @@
 from typing import List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
-#from tools.azure_tools import create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool
-from tools.azure_tools import create_work_item_tool, get_backlog_structure_tool, list_projects_tool
+from tools.azure_tools import create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool
 
 class ChatbotService:
     def __init__(self):
@@ -60,7 +59,7 @@ class ChatbotService:
             - O modelo com ferramentas acopladas é utilizado para identificar quando o modelo precisa chamar uma ferramenta e qual ferramenta chamar.
         """
         llm = ChatOpenAI(model = model_name, temperature = temperature)
-        llm_with_tools = llm.bind_tools([create_work_item_tool, get_backlog_structure_tool, list_projects_tool])
+        llm_with_tools = llm.bind_tools([create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool])
         return llm, llm_with_tools
 
     def build_messages(self, user_query: str, chat_history: List[BaseMessage]):
@@ -84,7 +83,9 @@ class ChatbotService:
         if response.tool_calls:
             # Mapeia manualmente todas as ferramentas disponíveis para poder chamá-las dinamicamente depois
             tool_map = {
-                "create_work_item_tool": create_work_item_tool,
+                "create_epic_tool": create_epic_tool,
+                "create_task_tool": create_task_tool,
+                "create_user_story_tool": create_user_story_tool,
                 "get_backlog_structure_tool": get_backlog_structure_tool,
                 "list_projects_tool": list_projects_tool
             }

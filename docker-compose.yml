@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile # A partir do contexto, indica o caminho até o Dockerfile
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY} # Passa a variável de ambiente do host para o container
+      - AZURE_DEVOPS_ORGANIZATION_URL=${AZURE_DEVOPS_ORGANIZATION_URL}
+      - AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT}
     ports:
       - "5000:5000"
     networks:

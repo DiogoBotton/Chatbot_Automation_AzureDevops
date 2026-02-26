@@ -1,29 +1,19 @@
-from datetime import datetime
-
-from azure.devops.connection import Connection
-from msrest.authentication import BasicAuthentication
 from azure.devops.v7_0.work_item_tracking.models import JsonPatchOperation
-from azure.devops.v7_0.work_item_tracking.work_item_tracking_client import WorkItemTrackingClient
-from azure.devops.v7_0.core.core_client import CoreClient
 from azure.devops.v7_0.work_item_tracking.models import Wiql
 from azure.devops.v7_0.work.models import TeamContext
-from settings import Settings
-# TODO: Criar ferramentas para cada tipo de work item, pois para cada tipo é necessário enviar variáveis obrigatórias diferentes.
+from constants.work_item import WorkItemProps, WorkItemTypes
+from services.azure_devops_client import AzureDevOpsClient
+
 class AzureDevOpsService:
     def __init__(self):
-        settings = Settings()
-        credentials = BasicAuthentication("", settings.AZURE_DEVOPS_PAT)
-        self.connection = Connection(base_url=settings.AZURE_DEVOPS_ORGANIZATION_URL, creds=credentials)
-        self.wit_client: WorkItemTrackingClient = self.connection.clients.get_work_item_tracking_client()
-        self.core_client: CoreClient = self.connection.clients.get_core_client()
-        self.ALLOWED_WORK_ITEM_TYPES = {"Epic", "User Story", "Task"}
+        self.azure_client = AzureDevOpsClient()
         
     def get_allowed_fields(self, project: str, work_item_type: str):
-        wit_type = self.wit_client.get_work_item_type(project, work_item_type)
+        wit_type = self.azure_client.wit_client.get_work_item_type(project, work_item_type)
         return {field.reference_name for field in wit_type.fields}
     
     def get_required_fields(self, project: str, work_item_type: str):
-        wit_type = self.wit_client.get_work_item_type(project, work_item_type)
+        wit_type = self.azure_client.wit_client.get_work_item_type(project, work_item_type)
         return [
             field.reference_name
             for field in wit_type.fields
@@ -31,7 +21,7 @@ class AzureDevOpsService:
         ]
     
     def get_default_area_path(self, project: str) -> str:
-        areas = self.wit_client.get_classification_node(
+        areas = self.azure_client.wit_client.get_classification_node(
             project=project,
             structure_group="areas",
             depth=1
@@ -39,33 +29,19 @@ class AzureDevOpsService:
 
         # normalmente o root já é o default
         return areas.path.lstrip("\\")
-        
-    def set_default_fields(self, project: str, title: str) -> dict:
-        defaults = {}
-        
-        defaults["System.Title"] = title
-        defaults["Microsoft.VSTS.Scheduling.StartDate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-        defaults["Microsoft.VSTS.Scheduling.FinishDate"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    def set_default_fields(self, project: str, fields: dict) -> dict:
+        defaults = {
+            WorkItemProps.AREA_PATH.value: project,
+            WorkItemProps.ITERATION_PATH.value: project,
+            WorkItemProps.STATE.value: "New",
+            WorkItemProps.PRIORITY.value: 2
+        }
 
-        # 🔹 AreaPath
-        defaults["System.AreaPath"] = project
-
-        # 🔹 IterationPath
-        defaults["System.IterationPath"] = project  # Exemplo simples, idealmente deveria verificar qual é a próxima Sprint ativa ou criar uma nova
-
-        # 🔹 State (pode ser default do processo)
-        defaults["System.State"] = "New"
-
-        # 🔹 Priority
-        defaults["Microsoft.VSTS.Common.Priority"] = 2
-
-        # 🔹 ValueArea (Agile normalmente usa Business como default)
-        defaults["Microsoft.VSTS.Common.ValueArea"] = "Business"
-
-        return defaults
+        return {**defaults, **fields} # Os campos enviados sobrescrevem os defaults
     
     def list_projects(self):
-        projects = self.core_client.get_projects()
+        projects = self.azure_client.core_client.get_projects()
 
         return [
             {
@@ -94,30 +70,29 @@ class AzureDevOpsService:
                     path="/relations/-",
                     value={
                         "rel": "System.LinkTypes.Hierarchy-Reverse",
-                        "url": f"{self.connection.base_url}/_apis/wit/workItems/{parent_id}"
+                        "url": f"{self.azure_client.connection.base_url}/_apis/wit/workItems/{parent_id}"
                     }
                 )
             )
             
         return patch_document
     
-    # TODO: Mudar para Create Epic
     def create_work_item(
         self,
         project: str,
         work_item_type: str,
-        title: str,
-        description: str | None = None,
+        fields: dict,
         parent_id: int | None = None
     ):
         # Valida tipo
-        if work_item_type not in self.ALLOWED_WORK_ITEM_TYPES:
-            return {"error": "INVALID_TYPE"}
+        if work_item_type not in [wt.value for wt in WorkItemTypes]:
+            return {
+                "error": "INVALID_TYPE", 
+                "message": f"Tipo '{work_item_type}' não é permitido."
+            }
 
         # Aplica defaults organizacionais
-        fields = self.set_default_fields(project, title)
-        if description:
-            fields["System.Description"] = description
+        fields = self.set_default_fields(project, fields)
 
         # Valida campos permitidos
         allowed_fields = self.get_allowed_fields(project, work_item_type)
@@ -145,86 +120,11 @@ class AzureDevOpsService:
         patch_document = self.create_patch_document(fields, parent_id)
 
         # Cria no Azure
-        return self.wit_client.create_work_item(
+        return self.azure_client.wit_client.create_work_item(
             document=patch_document,
             project=project,
             type=work_item_type
         )
-
-    # def create_epic(self, project: str, title: str, description: str = ""):
-    #     document = [
-    #         JsonPatchOperation(op="add", path="/fields/System.Title", value=title),
-    #         JsonPatchOperation(op="add", path="/fields/System.Description", value=description),
-    #         {
-    #         "op": "add",
-    #         "path": "/fields/Microsoft.VSTS.Scheduling.StartDate",
-    #         "value": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    #     }
-    #     ]
-
-    #     return self.wit_client.create_work_item(
-    #         document=document,
-    #         project=project,
-    #         type="Epic"
-    #     )
-
-    # def create_user_story(
-    #     self,
-    #     project: str,
-    #     title: str,
-    #     description: str = "",
-    #     parent_epic_id: int | None = None
-    # ):
-    #     document = [
-    #         JsonPatchOperation(op="add", path="/fields/System.Title", value=title),
-    #         JsonPatchOperation(op="add", path="/fields/System.Description", value=description),
-    #     ]
-
-    #     if parent_epic_id:
-    #         document.append(
-    #             JsonPatchOperation(
-    #                 op="add",
-    #                 path="/relations/-",
-    #                 value={
-    #                     "rel": "System.LinkTypes.Hierarchy-Reverse",
-    #                     "url": f"{self.connection.base_url}/_apis/wit/workItems/{parent_epic_id}"
-    #                 }
-    #             )
-    #         )
-
-    #     return self.wit_client.create_work_item(
-    #         document=document,
-    #         project=project,
-    #         type="User Story"
-    #     )
-
-    # def create_task(
-    #     self,
-    #     project: str,
-    #     title: str,
-    #     parent_user_story_id: int | None = None
-    # ):
-    #     document = [
-    #         JsonPatchOperation(op="add", path="/fields/System.Title", value=title),
-    #     ]
-
-    #     if parent_user_story_id:
-    #         document.append(
-    #             JsonPatchOperation(
-    #                 op="add",
-    #                 path="/relations/-",
-    #                 value={
-    #                     "rel": "System.LinkTypes.Hierarchy-Reverse",
-    #                     "url": f"{self.connection.base_url}/_apis/wit/workItems/{parent_user_story_id}"
-    #                 }
-    #             )
-    #         )
-
-    #     return self.wit_client.create_work_item(
-    #         document=document,
-    #         project=project,
-    #         type="Task"
-    #     )
 
     # ---------- LISTAGEM DE BACKLOG ----------
 
@@ -233,7 +133,7 @@ class AzureDevOpsService:
 
         team_context = TeamContext(project=project)
 
-        result = self.wit_client.query_by_wiql(
+        result = self.azure_client.wit_client.query_by_wiql(
             wiql=wiql,
             team_context=team_context
         )
@@ -243,7 +143,7 @@ class AzureDevOpsService:
         if not ids:
             return []
 
-        return self.wit_client.get_work_items(ids, expand="relations")
+        return self.azure_client.wit_client.get_work_items(ids, expand="relations")
 
     def get_backlog_structure(self, project: str):
         """
@@ -253,6 +153,7 @@ class AzureDevOpsService:
         - Tasks sem User Story
         """
 
+        # 'Epic','User Story','Task', 'Feature', 'Bug', 'Reunion', 'Test', 'Theme', 'Study', 'Scope Creep', 'Test Case'
         wiql = """
         SELECT [System.Id]
         FROM WorkItems
@@ -261,7 +162,7 @@ class AzureDevOpsService:
             AND [System.WorkItemType] IN ('Epic','User Story','Task')
         ORDER BY [System.Id]
         """
-
+        
         work_items = self.query_work_items(project, wiql)
 
         if not work_items:

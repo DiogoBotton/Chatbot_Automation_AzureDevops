@@ -1,53 +1,42 @@
+from datetime import datetime
+
 from langchain.tools import tool
+from constants.work_item import WorkItemProps, WorkItemTypes
 from services.azure_devops import AzureDevOpsService
 
 azure_service = AzureDevOpsService()
 
 @tool
-def list_projects_tool() -> list:
-    """Lista todos os projetos do Azure DevOps disponíveis."""
-    return azure_service.list_projects()
-
-@tool
-def create_work_item_tool(
+def create_epic_tool(
         project: str,
-        work_item_type: str,
         title: str,
         description: str | None = None,
         parent_id: int | None = None
 ):
     """
-    Cria um Work Item no Azure DevOps.
-
-    Tipos permitidos (work_item_type):
-    - Epic
-    - User Story
-    - Task
-    - Bug
-    - Reunion
-    - Test
-    - Theme
-    - Study
-    - Feature
-    - Scope Creep
-    - Test Case
+    Cria uma Epic no Azure DevOps.
     
-    Para criar um Work Item é necessário enviar:
+    Para criar uma Epic é necessário enviar:
     - Nome do projeto (project)
     - Título (title)
-    - Tipo (work_item_type)
     
     Os campos opcionais são:
     - Descrição (description)
     - ID do pai para vinculação hierárquica, se aplicável (parent_id)
     """
-
     try:
+        fields = {
+            WorkItemProps.TITLE.value: title,
+            WorkItemProps.DESCRIPTION.value: description or "",
+            WorkItemProps.START_DATE.value: datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            WorkItemProps.FINISH_DATE.value: datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            WorkItemProps.VALUE_AREA.value: "Business"
+        }
+        
         result = azure_service.create_work_item(
             project=project,
-            work_item_type=work_item_type,
-            title=title,
-            description=description,
+            work_item_type=WorkItemTypes.EPIC.value,
+            fields=fields,
             parent_id=parent_id
         )
 
@@ -58,51 +47,101 @@ def create_work_item_tool(
             "error": "UNEXPECTED_ERROR",
             "message": str(e)
         }
+    
+@tool
+def create_user_story_tool(
+    project: str,
+    title: str,
+    original_estimate: float,
+    parent_id: int | None = None
+):
+    """
+    Cria uma User Story no Azure DevOps.
 
-# @tool
-# def create_epic_tool(project: str, title: str, description: str = "") -> dict:
-#     """Cria um Epic em um projeto Azure DevOps."""
-#     wi = azure_service.create_epic(project, title, description)
-#     return {"id": wi.id, "title": title}
+    Obrigatório:
+    - project
+    - title
+    - original_estimate
+        - Os números válidos devem ser de 15 em 15 minutos (0.25, 0.5, 0.75, 1, 1.25, etc), mas aceite também números inteiros para facilitar ou horas/minutos convertendo para horas (ex: 90 minutos = 1.5 horas)
+    
+    Opcional:
+    - parent_id (para vincular a uma Epic ou Feature existente)"""
 
+    try:
+        default_dev_area = "Back-End"
 
-# @tool
-# def create_user_story_tool(
-#     project: str,
-#     title: str,
-#     description: str = "",
-#     parent_epic_id: int | None = None
-# ) -> dict:
-#     """
-#     Cria uma User Story.
-#     Pode opcionalmente vincular a um Epic existente.
-#     """
-#     wi = azure_service.create_user_story(
-#         project,
-#         title,
-#         description,
-#         parent_epic_id
-#     )
-#     return {"id": wi.id}
+        fields = {
+            WorkItemProps.TITLE.value: title,
+            WorkItemProps.ORIGINAL_ESTIMATE.value: original_estimate,
+            WorkItemProps.DEVELOPMENT_AREA.value: default_dev_area,
+            WorkItemProps.BLOCKED.value: "No",
+            WorkItemProps.VALUE_AREA.value: "Business"
+        }
 
+        result = azure_service.create_work_item(
+            project=project,
+            work_item_type=WorkItemTypes.USER_STORY.value,
+            fields=fields,
+            parent_id=parent_id
+        )
 
-# @tool
-# def create_task_tool(
-#     project: str,
-#     title: str,
-#     parent_user_story_id: int | None = None
-# ) -> dict:
-#     """
-#     Cria uma Task.
-#     Pode opcionalmente vincular a uma User Story existente.
-#     """
-#     wi = azure_service.create_task(
-#         project,
-#         title,
-#         parent_user_story_id
-#     )
-#     return {"id": wi.id}
+        return result
 
+    except Exception as e:
+        return {
+            "error": "UNEXPECTED_ERROR",
+            "message": str(e)
+        }
+    
+@tool
+def create_task_tool(
+    project: str,
+    title: str,
+    original_estimate: float,
+    parent_id: int | None = None
+):
+    """
+    Cria uma Task no Azure DevOps.
+
+    Obrigatório:
+    - project
+    - title
+    - original_estimate
+        - Os números válidos devem ser de 15 em 15 minutos (0.25, 0.5, 0.75, 1, 1.25, etc), mas aceite também números inteiros para facilitar ou horas/minutos convertendo para horas (ex: 90 minutos = 1.5 horas)
+    """
+
+    try:
+        # Defaults temporários
+        default_activity = "Development"  # depois pode buscar dinamicamente
+        default_dev_area = "Back-End"      # depois pode buscar dinamicamente
+
+        fields = {
+            WorkItemProps.TITLE.value: title,
+            WorkItemProps.ORIGINAL_ESTIMATE.value: original_estimate,
+            WorkItemProps.ACTIVITY.value: default_activity,
+            WorkItemProps.DEVELOPMENT_AREA.value: default_dev_area,
+            WorkItemProps.BLOCKED.value: "No"
+        }
+
+        result = azure_service.create_work_item(
+            project=project,
+            work_item_type=WorkItemTypes.TASK.value,
+            fields=fields,
+            parent_id=parent_id
+        )
+
+        return result
+
+    except Exception as e:
+        return {
+            "error": "UNEXPECTED_ERROR",
+            "message": str(e)
+        }
+        
+@tool
+def list_projects_tool() -> list:
+    """Lista todos os projetos do Azure DevOps disponíveis."""
+    return azure_service.list_projects()
 
 @tool
 def get_backlog_structure_tool(project: str) -> list:
