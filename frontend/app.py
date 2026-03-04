@@ -1,5 +1,4 @@
 import streamlit as st
-from langchain_core.messages import AIMessage, HumanMessage
 import requests
 from enums import MessageType
 import os
@@ -10,55 +9,66 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 st.set_page_config(page_title="Seu assistente virtual 🤖", page_icon="🤖")
 st.title("Seu assistente virtual 🤖")
 
-def request_agent(user_query: str):
-    history = []
-    for message in st.session_state.chat_history:
-        if isinstance(message, AIMessage):
-            history.append({
-                "type": MessageType.AI.value,
-                "message": message.content
-            })
-        elif isinstance(message, HumanMessage):
-            history.append({
-                "type": MessageType.HUMAN.value,
-                "message": message.content
-            })
-            
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = None
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+
+def ensure_conversation_id() -> str:
+    if st.session_state.conversation_id is not None:
+        return st.session_state.conversation_id
+
+    response = requests.post(f"{API_URL}/conversations/", json={})
+    response.raise_for_status()
+    conversation_id = response.json()["id"]
+    st.session_state.conversation_id = conversation_id
+    return conversation_id
+    
+def stream_chat_response(user_query: str, placeholder) -> str:
+    conversation_id = ensure_conversation_id()
+
     payload = {
         "input": user_query,
-        "chat_history": history
+        "conversation_id": conversation_id,
     }
-    response = requests.post(f"{API_URL}/chat", json=payload)
-    response.raise_for_status()
-    
-    data = response.json()
-    
-    return data["response"]
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [AIMessage(content="Olá, sou o seu assistente virtual! Como posso ajudar você? :)")]
+    full_response = ""
+    with requests.post(f"{API_URL}/chat", json=payload, stream=True) as response:
+        response.raise_for_status()
+        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+            if not chunk:
+                continue
+            full_response += chunk
+            placeholder.write(full_response)
 
-# Renderização do histórico de mensagens
-for message in st.session_state.chat_history:
-    if isinstance(message, AIMessage):
+    return full_response
+
+def add_message(message: str, message_type: MessageType):
+    st.session_state.messages.append({
+        "type": message_type,
+        "message": message
+    })
+
+for message in st.session_state.messages:
+    if message["type"] == "assistant":
         with st.chat_message("ai"):
-            st.write(message.content)
-    elif isinstance(message, HumanMessage):
+            st.write(message["message"])
+    elif message["type"] == "user":
         with st.chat_message("human"):
-            st.write(message.content)
+            st.write(message["message"])
 
-# Input para o usuário escrever            
 user_query = st.chat_input("Digite sua mensagem aqui...")
 
-# Adiciona o input ao chat
-if user_query is not None and len(user_query) != 0:
-    st.session_state.chat_history.append(HumanMessage(content=user_query))
-    
+if user_query:
+    # Renderiza imediatamente a mensagem do usuário (UX melhor)
     with st.chat_message("human"):
-        st.markdown(user_query)
-    
+        st.write(user_query)
+        add_message(user_query, MessageType.USER.value)
+
     with st.chat_message("ai"):
+        placeholder = st.empty()
         with st.spinner("Gerando resposta..."):
-            resp = request_agent(user_query)
-        st.write(resp)
-    st.session_state.chat_history.append(AIMessage(content=resp))
+            ai_response = stream_chat_response(user_query, placeholder)
+        add_message(ai_response, MessageType.ASSISTANT.value)

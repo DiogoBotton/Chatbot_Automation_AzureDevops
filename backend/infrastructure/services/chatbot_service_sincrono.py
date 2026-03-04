@@ -1,7 +1,7 @@
 from typing import List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from tools.azure_tools import create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool
+from infrastructure.tools.azure_tools import create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool
 
 class ChatbotService:
     def __init__(self):
@@ -50,6 +50,15 @@ class ChatbotService:
             - Seja objetivo e técnico.
             """
         self.llm, self.llm_with_tools = self.model_openai()
+        
+        # Mapeia manualmente todas as ferramentas disponíveis para poder chamá-las dinamicamente depois
+        self.tool_map = {
+                "create_epic_tool": create_epic_tool,
+                "create_task_tool": create_task_tool,
+                "create_user_story_tool": create_user_story_tool,
+                "get_backlog_structure_tool": get_backlog_structure_tool,
+                "list_projects_tool": list_projects_tool
+            }
 
     def model_openai(self, model_name = "gpt-4o-mini", temperature = 0):
         """
@@ -81,21 +90,13 @@ class ChatbotService:
 
         # Caso o modelo precise chamar uma ferramenta
         if response.tool_calls:
-            # Mapeia manualmente todas as ferramentas disponíveis para poder chamá-las dinamicamente depois
-            tool_map = {
-                "create_epic_tool": create_epic_tool,
-                "create_task_tool": create_task_tool,
-                "create_user_story_tool": create_user_story_tool,
-                "get_backlog_structure_tool": get_backlog_structure_tool,
-                "list_projects_tool": list_projects_tool
-            }
-
+            
             # Adiciona o response a lista de mensagens para o modelo saber que houve necessidade de chamar uma ferramenta
             messages.append(response)
 
             for tool_call in response.tool_calls:
                 # Busca a função do tool_map (dicionário) pelo nome da ferramenta
-                tool_func = tool_map.get(tool_call["name"])
+                tool_func = self.tool_map.get(tool_call["name"])
                 if tool_func:
                     try:
                         # Caso achar a ferramenta, chama a função passando os parâmetros (args) necessários

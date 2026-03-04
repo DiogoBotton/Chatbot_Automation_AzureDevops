@@ -2,7 +2,7 @@ from azure.devops.v7_0.work_item_tracking.models import JsonPatchOperation
 from azure.devops.v7_0.work_item_tracking.models import Wiql
 from azure.devops.v7_0.work.models import TeamContext
 from constants.work_item import WorkItemProps, WorkItemTypes
-from services.azure_devops_client import AzureDevOpsClient
+from infrastructure.services.azure.azure_client import AzureDevOpsClient
 
 class AzureDevOpsService:
     def __init__(self):
@@ -62,7 +62,7 @@ class AzureDevOpsService:
             for field, value in fields.items()
         ]
 
-        # 7️⃣ adiciona parent se houver
+        # adiciona parent se houver
         if parent_id:
             patch_document.append(
                 JsonPatchOperation(

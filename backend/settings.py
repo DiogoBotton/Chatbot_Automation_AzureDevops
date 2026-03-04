@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file='.env', env_file_encoding='utf-8'
     )
+    # Database
+    DATABASE_URL: str
     
     # Azure DevOps
     AZURE_DEVOPS_PAT: str

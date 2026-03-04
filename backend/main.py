@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from features.conversation import conversation_controller
 from features.chat import chat_controller
 from dotenv import load_dotenv
 import os
@@ -22,3 +23,4 @@ app.add_middleware(
 )
 
 app.include_router(chat_controller.router)
+app.include_router(conversation_controller.router)
