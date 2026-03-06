@@ -145,6 +145,7 @@ class AzureDevOpsService:
 
         return self.azure_client.wit_client.get_work_items(ids, expand="relations")
 
+    # TODO: Retornar tbm Assigned To
     def get_backlog_structure(self, project: str):
         """
         Retorna:
