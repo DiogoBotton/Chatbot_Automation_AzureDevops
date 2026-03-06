@@ -27,23 +27,11 @@ class ChatbotService:
             - Aguarde o usuário responder.
             - Só então execute a ferramenta.
 
-            4) Se uma tool retornar:
-            {
-              "error": "MISSING_REQUIRED_FIELDS",
-              "missing_fields": [...]
-            }
-
-            Você deve:
-            - Informar ao usuário quais campos estão faltando (nomes amigáveis).
-            - Solicitar os valores.
-            - Aguardar resposta.
-            - Reexecutar a mesma tool incluindo TODOS os campos já informados + os novos.
-
-            5) Hierarquia:
+            4) Hierarquia:
             Epic → User Story → Task
             Task não pode ter filhos.
 
-            6) Se o pedido não for relacionado ao Azure DevOps, informe que você apenas gerencia backlog no Azure DevOps.
+            5) Se o pedido não for relacionado ao Azure DevOps, informe que você apenas gerencia backlog no Azure DevOps.
 
             COMPORTAMENTO:
 
@@ -93,19 +81,20 @@ class ChatbotService:
         if not response.tool_calls:
             return response, messages
         
+        # Mensagem de chamada de ferramentas
+        new_messages.append(ConversationHistory(
+            role=MessageType.ASSISTANT,
+            tool_calls=response.tool_calls))
+        
+        # Adiciona o response a lista de mensagens para o modelo saber que houve necessidade de chamar uma ferramenta
+        messages.append(response)
+        
         # Caso o modelo precise chamar uma ferramenta
         for tool_call in response.tool_calls:
-            # Adiciona o response a lista de mensagens para o modelo saber que houve necessidade de chamar uma ferramenta
-            messages.append(response) # TODO: N seria melhor adicionar um AIMessage?
             
             # Busca a função do tool_map (dicionário) pelo nome da ferramenta
             tool_func = self.tool_map.get(tool_call["name"])
             if tool_func:
-                # Mensagem de chamada de ferramenta
-                new_messages.append(ConversationHistory(
-                    role=MessageType.ASSISTANT,
-                    tool_calls=[tool_call])) # Sempre salva tool_calls como uma lista
-                
                 try:
                     # Caso achar a ferramenta, chama a função passando os parâmetros (args) necessários
                     tool_response = tool_func.invoke(tool_call["args"])

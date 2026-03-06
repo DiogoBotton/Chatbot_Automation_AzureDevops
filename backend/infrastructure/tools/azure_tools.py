@@ -57,7 +57,7 @@ def create_user_story_tool(
 ):
     """
     Cria uma User Story no Azure DevOps.
-
+    
     Obrigatório:
     - project
     - title
@@ -140,10 +140,16 @@ def create_task_tool(
         
 @tool
 def list_projects_tool() -> list:
-    """Lista todos os projetos do Azure DevOps disponíveis."""
+    """
+    Lista todos os projetos do Azure DevOps disponíveis.
+    Quando for o caso, use essa tool para obter o nome exato do projeto para usar nas outras ferramentas.
+    """
     return azure_service.list_projects()
 
 @tool
 def get_backlog_structure_tool(project: str) -> list:
-    """Lista toda a estrutura Epic → User Story → Task do projeto."""
+    """
+    Lista toda a estrutura Epic → User Story → Task do projeto.
+    Quando for o caso, use essa tool quando precisar saber o ID de alguma Work Item pelo nome para vincular como pai.
+    """
     return azure_service.get_backlog_structure(project)
