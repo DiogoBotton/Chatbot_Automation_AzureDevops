@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from langchain.tools import tool
-from constants.work_item import WorkItemProps, WorkItemTypes
+from infrastructure.constants.work_item import WorkItemProps, WorkItemTypes
 from infrastructure.services.azure.azure_service import AzureDevOpsService
 
 azure_service = AzureDevOpsService()

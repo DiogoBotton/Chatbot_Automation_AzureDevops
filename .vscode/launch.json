@@ -5,15 +5,28 @@
   "version": "1.5.1",
   "configurations": [
     {
-      "name": "Debuger: FastAPI",
+      "name": "Debuger: FastAPI (backend-chat)",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
       "args": ["main:app", "--reload"],
-      "cwd": "${workspaceFolder}/backend", // Alterar nome da aplicação para "${workspaceFolder}/<nome_da_aplicação>/app", caso necessário
-      "envFile": "${workspaceFolder}/backend/.env", // Define .env específico para o backend
+      "cwd": "${workspaceFolder}/backend-chat", // Alterar nome da aplicação para "${workspaceFolder}/<nome_da_aplicação>/app", caso necessário
+      "envFile": "${workspaceFolder}/backend-chat/.env", // Define .env específico para o backend
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/backend"
+        "PYTHONPATH": "${workspaceFolder}/backend-chat"
+      },
+      "jinja": false
+    },
+    {
+      "name": "Debuger: FastAPI (backend-tools)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--reload"],
+      "cwd": "${workspaceFolder}/backend-tools", // Alterar nome da aplicação para "${workspaceFolder}/<nome_da_aplicação>/app", caso necessário
+      "envFile": "${workspaceFolder}/backend-tools/.env", // Define .env específico para o backend
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend-tools"
       },
       "jinja": false
     }

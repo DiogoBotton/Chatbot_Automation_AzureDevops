@@ -1,7 +1,7 @@
 services:
   api:
     build:
-      context: ./backend # Configura o contexto
+      context: ./backend-chat # Configura o contexto
       dockerfile: Dockerfile # A partir do contexto, indica o caminho até o Dockerfile
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY} # Passa a variável de ambiente do host para o container
