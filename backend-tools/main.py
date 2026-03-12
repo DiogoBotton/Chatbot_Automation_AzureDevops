@@ -1,10 +1,11 @@
 from fastapi import FastAPI
+from fastapi_mcp import FastApiMCP
 from fastapi.middleware.cors import CORSMiddleware
 from features.work_items import work_items_controller
 from features.projects import projects_controller
 
 app = FastAPI(
-    title="API Tools MCP",
+    title="API Tools",
     docs_url="/docs",  # URL para disponibilização do Swagger UI
 )
 
@@ -19,3 +20,11 @@ app.add_middleware(
 
 app.include_router(work_items_controller.router)
 app.include_router(projects_controller.router)
+
+mcp = FastApiMCP(
+    app,
+    name="API Tools MCP",
+    description="Servidor MCP expondo API"
+)
+
+mcp.mount()

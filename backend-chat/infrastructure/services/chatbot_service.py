@@ -3,8 +3,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from domains.enums.message_type import MessageType
 from domains.conversation_history import ConversationHistory
-from infrastructure.tools.azure_tools import create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool
+from settings import Settings
 import time
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 class ChatbotService:
     def __init__(self):
@@ -40,16 +41,27 @@ class ChatbotService:
             - Só execute ferramentas quando tiver 100% dos dados obrigatórios.
             - Seja objetivo e técnico.
             """
-        self.llm, self.llm_with_tools = self.model_openai()
-        
-        # Mapeia manualmente todas as ferramentas disponíveis para poder chamá-las dinamicamente depois
-        self.tool_map = {
-                "create_epic_tool": create_epic_tool,
-                "create_task_tool": create_task_tool,
-                "create_user_story_tool": create_user_story_tool,
-                "get_backlog_structure_tool": get_backlog_structure_tool,
-                "list_projects_tool": list_projects_tool
+            
+        self.client_mcp = None
+        self.tools = []
+        self.tool_map = {}
+
+        self.llm = None
+        self.llm_with_tools = None
+
+    async def initialize(self):
+        self.client_mcp = MultiServerMCPClient({
+            "azure_devops_api": {
+                "url": f"{Settings().API_TOOLS_URL}/mcp",
+                "transport": "sse"
             }
+        })
+        
+        self.tools = await self.client_mcp.get_tools()
+
+        self.tool_map = {tool.name: tool for tool in self.tools}
+
+        self.llm, self.llm_with_tools = self.model_openai()
 
     def model_openai(self, model_name = "gpt-4o-mini", temperature = 0):
         """
@@ -59,7 +71,7 @@ class ChatbotService:
             - O modelo com ferramentas acopladas é utilizado para identificar quando o modelo precisa chamar uma ferramenta e qual ferramenta chamar.
         """
         llm = ChatOpenAI(model = model_name, temperature = temperature)
-        llm_with_tools = llm.bind_tools([create_epic_tool, create_task_tool, create_user_story_tool, get_backlog_structure_tool, list_projects_tool])
+        llm_with_tools = llm.bind_tools(self.tools)
         return llm, llm_with_tools
 
     def build_messages(self, user_query: str, chat_history: List[BaseMessage]):
@@ -73,9 +85,9 @@ class ChatbotService:
 
         return [system] + chat_history + [HumanMessage(content=user_query)]
 
-    def execute_llm_with_tools(self, messages: List[BaseMessage], new_messages: List[ConversationHistory]):
+    async def execute_llm_with_tools(self, messages: List[BaseMessage], new_messages: List[ConversationHistory]):
         # Identifica se o modelo precisa chamar uma ferramenta ou não
-        response = self.llm_with_tools.invoke(messages)
+        response = await self.llm_with_tools.ainvoke(messages)
         
         # Mensagem da resposta final do modelo, sem chamar a ferramenta
         if not response.tool_calls:
@@ -97,7 +109,7 @@ class ChatbotService:
             if tool_func:
                 try:
                     # Caso achar a ferramenta, chama a função passando os parâmetros (args) necessários
-                    tool_response = tool_func.invoke(tool_call["args"])
+                    tool_response = await tool_func.ainvoke(tool_call["args"])
                 except Exception as e:
                     tool_response = {"error": str(e)}
                     
@@ -128,12 +140,12 @@ class ChatbotService:
             role=MessageType.ASSISTANT,
             content=full_content))
 
-    def get_response_stream(self, user_query: str, chat_history: List[BaseMessage]) -> tuple[str, List[ConversationHistory]]:
+    async def get_response_stream(self, user_query: str, chat_history: List[BaseMessage]) -> tuple[str, List[ConversationHistory]]:
         # A edição de new_messages ocorre com referência de memória
         new_messages = []
         messages = self.build_messages(user_query, chat_history)
 
-        response, messages = self.execute_llm_with_tools(messages, new_messages)
+        response, messages = await self.execute_llm_with_tools(messages, new_messages)
         
         if response:
             def generator():

@@ -25,7 +25,7 @@ class Chatbot(BaseHandler[Command, MessageResult]):
         self.db = db
         self.chatbotService = chatbotService
 
-    def execute(self, request: Command):
+    async def execute(self, request: Command):
         conversation = (self.db
                         .query(Conversation)
                         .filter(Conversation.id == request.conversation_id)
@@ -33,6 +33,8 @@ class Chatbot(BaseHandler[Command, MessageResult]):
         
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+        
+        await self.chatbotService.initialize()
             
         history = []
         conversation_history: List[ConversationHistory] = (
@@ -50,7 +52,7 @@ class Chatbot(BaseHandler[Command, MessageResult]):
             elif ch.role == MessageType.TOOL:
                 history.append(ToolMessage(ch.content, tool_call_id=ch.tool_call_id))
         
-        generator, new_messages = self.chatbotService.get_response_stream(request.input, history)
+        generator, new_messages = await self.chatbotService.get_response_stream(request.input, history)
         
         def wrapped_generator():
             full_response = ""

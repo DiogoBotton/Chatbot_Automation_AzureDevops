@@ -1,5 +1,5 @@
 services:
-  api:
+  api-chat:
     build:
       context: ./backend-chat # Configura o contexto
       dockerfile: Dockerfile # A partir do contexto, indica o caminho até o Dockerfile
@@ -8,8 +8,22 @@ services:
       - AZURE_DEVOPS_ORGANIZATION_URL=${AZURE_DEVOPS_ORGANIZATION_URL}
       - AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT}
       - DATABASE_URL=${DATABASE_URL}
+      - API_TOOLS_URL=http://api-tools:5050 # Aponta a URL da API Tools para o container do api-chat (utiliza o nome do serviço "api-tools" definido no docker-compose como hostname)
     ports:
       - "5000:5000"
+    networks:
+      - app_network
+  
+  api-tools:
+    build:
+      context: ./backend-tools # Configura o contexto
+      dockerfile: Dockerfile # A partir do contexto, indica o caminho até o Dockerfile
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY} # Passa a variável de ambiente do host para o container
+      - AZURE_DEVOPS_ORGANIZATION_URL=${AZURE_DEVOPS_ORGANIZATION_URL}
+      - AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT}
+    ports:
+      - "5050:5050"
     networks:
       - app_network
 
@@ -39,11 +53,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     environment:
-      - API_URL=http://api:5000 # Aponta a URL da API para o container do frontend (utiliza o nome do serviço "api" definido no docker-compose como hostname)
+      - API_URL=http://api-chat:5050 # Aponta a URL da API para o container do frontend (utiliza o nome do serviço "api-chat" definido no docker-compose como hostname)
     ports:
       - "80:80"
     depends_on:
-      - api
+      - api-chat
     networks:
       - app_network
 

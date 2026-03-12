@@ -8,4 +8,5 @@ dependencies = [
     "fastapi[standard]>=0.129.0",
     "pydantic-settings>=2.13.0",
     "azure-devops>=7.1.0b4",
+    "fastapi-mcp>=0.4.0",
 ]

@@ -7,4 +7,4 @@ router = APIRouter(tags=["Chat"])
 @router.post("/chat", response_model=MessageResult)
 async def chat_endpoint(command: chatbot.Command = Body(...),
                handler: chatbot.Chatbot = Depends()):
-    return handler.execute(command)
+    return await handler.execute(command)

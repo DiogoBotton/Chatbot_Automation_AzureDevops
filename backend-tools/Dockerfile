@@ -29,7 +29,7 @@ RUN uv sync --frozen --no-cache
 RUN chmod +x start.sh
 
 # Porta informativa
-EXPOSE 5000
+EXPOSE 5050
 
 # Executa via script
 CMD ["/bin/bash", "start.sh"]

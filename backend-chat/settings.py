@@ -14,3 +14,6 @@ class Settings(BaseSettings):
     
     # OpenAI (ChatGPT)
     OPENAI_API_KEY: str = ""
+    
+    # URL do serviço de ferramentas (FastAPI)
+    API_TOOLS_URL: str = "http://localhost:5050"
