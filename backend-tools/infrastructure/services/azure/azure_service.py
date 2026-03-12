@@ -2,6 +2,9 @@ from azure.devops.v7_0.work_item_tracking.models import JsonPatchOperation
 from azure.devops.v7_0.work_item_tracking.models import Wiql
 from azure.devops.v7_0.work.models import TeamContext
 from fastapi import Depends
+from infrastructure.dtos.projects.projects_result import ProjectsResult
+from infrastructure.dtos.work_items.backlog_structure_result import BacklogStructure, BacklogStructureResult
+from infrastructure.dtos.work_items.work_item_result import WorkItemResult
 from infrastructure.enums.work_item import WorkItemProps, WorkItemTypes
 from infrastructure.services.azure.azure_client import AzureDevOpsClient
 
@@ -41,17 +44,21 @@ class AzureDevOpsService:
 
         return {**defaults, **fields} # Os campos enviados sobrescrevem os defaults
     
-    def list_projects(self):
+    def _web_url(self, project: str, work_item_id: int) -> str:
+        base = self.azure_client.connection.base_url.rstrip("/")
+        return f"{base}/{project}/_workitems/edit/{work_item_id}"
+
+    def list_projects(self) -> ProjectsResult:
         projects = self.azure_client.core_client.get_projects()
 
-        return [
+        return ProjectsResult(items=[
             {
                 "id": project.id,
                 "name": project.name,
-                "state": project.state
+                "state": project.state,
             }
             for project in projects
-        ]
+        ])
     
     def create_patch_document(self, fields: dict, parent_id: int | None = None):
         patch_document = [
@@ -84,13 +91,10 @@ class AzureDevOpsService:
         work_item_type: str,
         fields: dict,
         parent_id: int | None = None
-    ):
+    ) -> WorkItemResult:
         # Valida tipo
         if work_item_type not in [wt.value for wt in WorkItemTypes]:
-            return {
-                "error": "INVALID_TYPE", 
-                "message": f"Tipo '{work_item_type}' não é permitido."
-            }
+            return WorkItemResult(error="INVALID_TYPE", message=f"Tipo '{work_item_type}' não é permitido.")
 
         # Aplica defaults organizacionais
         fields = self.set_default_fields(project, fields)
@@ -100,10 +104,7 @@ class AzureDevOpsService:
         invalid_fields = [f for f in fields if f not in allowed_fields]
 
         if invalid_fields:
-            return {
-                "error": "INVALID_FIELDS",
-                "invalid_fields": invalid_fields
-            }
+            return WorkItemResult(error="INVALID_FIELDS", message=str(invalid_fields))
 
         # Valida obrigatórios
         required_fields = self.get_required_fields(project, work_item_type)
@@ -121,11 +122,24 @@ class AzureDevOpsService:
         patch_document = self.create_patch_document(fields, parent_id)
 
         # Cria no Azure
-        return self.azure_client.wit_client.create_work_item(
+        wi = self.azure_client.wit_client.create_work_item(
             document=patch_document,
             project=project,
             type=work_item_type
         )
+
+        assigned_to = wi.fields.get(WorkItemProps.ASSIGNED_TO.value)
+        if isinstance(assigned_to, dict):
+            assigned_to = assigned_to.get("displayName")
+
+        return WorkItemResult(response={
+            "id": wi.id,
+            "title": wi.fields.get(WorkItemProps.TITLE.value),
+            "type": wi.fields.get(WorkItemProps.WORK_ITEM_TYPE.value),
+            "assigned_to": assigned_to,
+            "url": self._web_url(project, wi.id),
+            "original_estimate": wi.fields.get(WorkItemProps.ORIGINAL_ESTIMATE.value),
+        })
 
     # ---------- LISTAGEM DE BACKLOG ----------
 
@@ -146,8 +160,7 @@ class AzureDevOpsService:
 
         return self.azure_client.wit_client.get_work_items(ids, expand="relations")
 
-    # TODO: Retornar tbm Assigned To
-    def get_backlog_structure(self, project: str):
+    def get_backlog_structure(self, project: str) -> BacklogStructureResult:
         """
         Retorna:
         - Epics com hierarquia completa
@@ -168,11 +181,7 @@ class AzureDevOpsService:
         work_items = self.query_work_items(project, wiql)
 
         if not work_items:
-            return {
-                "epics": [],
-                "orphan_user_stories": [],
-                "orphan_tasks": []
-            }
+            return BacklogStructureResult(items=BacklogStructure())
 
         # -------------------------
         # Indexação inicial
@@ -184,10 +193,17 @@ class AzureDevOpsService:
         tasks = {}
 
         for wi in work_items:
+            assigned_to = wi.fields.get(WorkItemProps.ASSIGNED_TO.value)
+            if isinstance(assigned_to, dict):
+                assigned_to = assigned_to.get("displayName")
+
             item = {
                 "id": wi.id,
-                "title": wi.fields.get("System.Title"),
-                "type": wi.fields.get("System.WorkItemType"),
+                "title": wi.fields.get(WorkItemProps.TITLE.value),
+                "type": wi.fields.get(WorkItemProps.WORK_ITEM_TYPE.value),
+                "assigned_to": assigned_to,
+                "url": self._web_url(project, wi.id),
+                "original_estimate": wi.fields.get(WorkItemProps.ORIGINAL_ESTIMATE.value),
                 "children": []
             }
 
@@ -246,8 +262,10 @@ class AzureDevOpsService:
             if tid not in linked_tasks
         ]
 
-        return {
-            "epics": list(epics.values()),
-            "orphan_user_stories": orphan_user_stories,
-            "orphan_tasks": orphan_tasks
-        }
+        return BacklogStructureResult(
+            items=BacklogStructure(
+                epics=list(epics.values()),
+                orphan_user_stories=orphan_user_stories,
+                orphan_tasks=orphan_tasks,
+            )
+        )

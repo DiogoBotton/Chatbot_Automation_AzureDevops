@@ -1,6 +1,5 @@
 from datetime import datetime
 from fastapi import Depends
-from fastapi.encoders import jsonable_encoder
 from infrastructure.dtos.work_items.work_item_result import WorkItemResult
 from infrastructure.services.azure.azure_service import AzureDevOpsService
 from infrastructure.enums.work_item import WorkItemProps, WorkItemTypes
@@ -29,14 +28,12 @@ class Chatbot(BaseHandler[Command, WorkItemResult]):
                 WorkItemProps.VALUE_AREA.value: "Business"
             }
 
-            result = self.azureService.create_work_item(
+            return self.azureService.create_work_item(
                 project=request.project,
                 work_item_type=WorkItemTypes.EPIC.value,
                 fields=fields,
                 parent_id=request.parent_id
             )
 
-            return WorkItemResult(response=jsonable_encoder(result))
-
         except Exception as e:
-            return WorkItemResult(response={"error": "UNEXPECTED_ERROR", "message": str(e)})
+            return WorkItemResult(error="UNEXPECTED_ERROR", message=str(e))

@@ -16,7 +16,11 @@ class WorkItemProps(Enum):
     ACTIVITY = "Microsoft.VSTS.Common.Activity" # Atividade (Ex: Desenvolvimento, Teste, Análise)
     DEVELOPMENT_AREA = "Custom.DevelopmentArea" # Área de desenvolvimento (Ex: Frontend, Backend, Mobile)
     BLOCKED = "Microsoft.VSTS.CMMI.Blocked" # Indicador se a Work Item está bloqueada (True/False)
-    
+
+    # Campos de leitura (não usados como input em patch)
+    ASSIGNED_TO = "System.AssignedTo" # Usuário atribuído à Work Item
+    WORK_ITEM_TYPE = "System.WorkItemType" # Tipo da Work Item (ex: Epic, Task, User Story)
+
 class WorkItemTypes(Enum):
     EPIC = "Epic"
     FEATURE = "Feature"

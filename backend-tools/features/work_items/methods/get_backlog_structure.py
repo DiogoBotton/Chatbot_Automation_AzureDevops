@@ -19,7 +19,6 @@ class Chatbot(BaseHandler[Command, BacklogStructureResult]):
 
     def execute(self, request: Command) -> BacklogStructureResult:
         try:
-            result = self.azureService.get_backlog_structure(request.project)
-            return BacklogStructureResult(response=result)
+            return self.azureService.get_backlog_structure(request.project)
         except Exception as e:
-            return BacklogStructureResult(response={"error": "UNEXPECTED_ERROR", "message": str(e)})
+            return BacklogStructureResult(error="UNEXPECTED_ERROR", message=str(e))

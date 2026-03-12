@@ -11,6 +11,6 @@ class BaseHandler(ABC, Generic[TRequest, TResponse]):
         pass
 
     @abstractmethod
-    def execute(self, request: TRequest):
+    def execute(self, request: TRequest) -> TResponse:
         """Método principal que deve ser implementado pelas subclasses"""
         raise NotImplementedError("Handler não implementada.")

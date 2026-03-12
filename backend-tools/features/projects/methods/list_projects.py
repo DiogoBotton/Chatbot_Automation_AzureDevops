@@ -16,7 +16,6 @@ class Chatbot(BaseHandler[Query, ProjectsResult]):
 
     def execute(self, request: Query) -> ProjectsResult:
         try:
-            result = self.azureService.list_projects()
-            return ProjectsResult(response=result)
+            return self.azureService.list_projects()
         except Exception as e:
-            return ProjectsResult(response=[{"error": "UNEXPECTED_ERROR", "message": str(e)}])
+            return ProjectsResult(error="UNEXPECTED_ERROR", message=str(e))

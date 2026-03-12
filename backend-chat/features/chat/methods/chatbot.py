@@ -54,9 +54,9 @@ class Chatbot(BaseHandler[Command, MessageResult]):
         
         generator, new_messages = await self.chatbotService.get_response_stream(request.input, history)
         
-        def wrapped_generator():
+        async def wrapped_generator():
             full_response = ""
-            for chunk in generator:
+            async for chunk in generator:
                 full_response += chunk
                 yield chunk
             
