@@ -18,8 +18,7 @@ class Command(BaseModel):
         ),
         examples=[0.5],
     )
-    parent_id: int | None = Field(
-        default=None,
+    parent_id: int = Field(
         description="ID do pai (normalmente uma User Story) para criar vínculo hierárquico",
         examples=[5678],
     )

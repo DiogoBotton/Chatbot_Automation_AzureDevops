@@ -33,8 +33,6 @@ class Chatbot(BaseHandler[Command, MessageResult]):
         
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-        
-        await self.chatbotService.initialize()
             
         history = []
         conversation_history: List[ConversationHistory] = (
