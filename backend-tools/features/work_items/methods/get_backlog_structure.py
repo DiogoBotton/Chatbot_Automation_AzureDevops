@@ -4,12 +4,11 @@ from infrastructure.services.azure.azure_service import AzureDevOpsService
 from pydantic import BaseModel, Field
 
 from . import BaseHandler
-
+from uuid import UUID
 
 class Command(BaseModel):
-    project: str = Field(
-        description="Nome exato do projeto no Azure DevOps",
-        examples=["MeuProjeto"],
+    project_id: UUID = Field(
+        description="ID do projeto no Azure DevOps (UUID). Use GET /projects para obter.",
     )
 
 
@@ -19,6 +18,8 @@ class Chatbot(BaseHandler[Command, BacklogStructureResult]):
 
     def execute(self, request: Command) -> BacklogStructureResult:
         try:
-            return self.azureService.get_backlog_structure(request.project)
+            return self.azureService.get_backlog_structure(str(request.project_id))
+        except ValueError as e:
+            return BacklogStructureResult(error="PROJECT_NOT_FOUND", message=str(e))
         except Exception as e:
             return BacklogStructureResult(error="UNEXPECTED_ERROR", message=str(e))

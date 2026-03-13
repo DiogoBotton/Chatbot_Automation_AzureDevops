@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from azure.devops.v7_0.work_item_tracking.models import JsonPatchOperation
 from azure.devops.v7_0.work_item_tracking.models import Wiql
 from azure.devops.v7_0.work.models import TeamContext
@@ -48,6 +50,13 @@ class AzureDevOpsService:
         base = self.azure_client.connection.base_url.rstrip("/")
         return f"{base}/{project}/_workitems/edit/{work_item_id}"
 
+    def get_project_by_id(self, project_id: str) -> str:
+        """Valida o projeto pelo ID e retorna seu nome. Lança ValueError se não encontrado."""
+        project = self.azure_client.core_client.get_project(project_id)
+        if not project:
+            raise ValueError(f"Projeto com ID '{project_id}' não encontrado.")
+        return project.name
+
     def list_projects(self) -> ProjectsResult:
         projects = self.azure_client.core_client.get_projects()
 
@@ -87,7 +96,8 @@ class AzureDevOpsService:
     
     def create_work_item(
         self,
-        project: str,
+        project_id: str,
+        project_name: str,
         work_item_type: str,
         fields: dict,
         parent_id: int | None = None
@@ -96,18 +106,18 @@ class AzureDevOpsService:
         if work_item_type not in [wt.value for wt in WorkItemTypes]:
             return WorkItemResult(error="INVALID_TYPE", message=f"Tipo '{work_item_type}' não é permitido.")
 
-        # Aplica defaults organizacionais
-        fields = self.set_default_fields(project, fields)
+        # Aplica defaults com project_name (areaPath e iterationPath exigem nome)
+        fields = self.set_default_fields(project_name, fields)
 
-        # Valida campos permitidos
-        allowed_fields = self.get_allowed_fields(project, work_item_type)
+        # Valida campos permitidos usando project_id (UUID)
+        allowed_fields = self.get_allowed_fields(project_id, work_item_type)
         invalid_fields = [f for f in fields if f not in allowed_fields]
 
         if invalid_fields:
             return WorkItemResult(error="INVALID_FIELDS", message=str(invalid_fields))
 
-        # Valida obrigatórios
-        required_fields = self.get_required_fields(project, work_item_type)
+        # Valida obrigatórios usando project_id (UUID)
+        required_fields = self.get_required_fields(project_id, work_item_type)
         missing_fields = [f for f in required_fields if f not in fields]
         
         print("Campos faltantes:", missing_fields)  # DEBUG
@@ -121,10 +131,10 @@ class AzureDevOpsService:
         # Cria patch document
         patch_document = self.create_patch_document(fields, parent_id)
 
-        # Cria no Azure
+        # Cria no Azure usando project_id (UUID)
         wi = self.azure_client.wit_client.create_work_item(
             document=patch_document,
-            project=project,
+            project=project_id,
             type=work_item_type
         )
 
@@ -137,7 +147,7 @@ class AzureDevOpsService:
             "title": wi.fields.get(WorkItemProps.TITLE.value),
             "type": wi.fields.get(WorkItemProps.WORK_ITEM_TYPE.value),
             "assigned_to": assigned_to,
-            "url": self._web_url(project, wi.id),
+            "url": self._web_url(project_id, wi.id),
             "original_estimate": wi.fields.get(WorkItemProps.ORIGINAL_ESTIMATE.value),
         })
 
@@ -160,7 +170,7 @@ class AzureDevOpsService:
 
         return self.azure_client.wit_client.get_work_items(ids, expand="relations")
 
-    def get_backlog_structure(self, project: str) -> BacklogStructureResult:
+    def get_backlog_structure(self, project_id: UUID) -> BacklogStructureResult:
         """
         Retorna:
         - Epics com hierarquia completa
@@ -178,7 +188,7 @@ class AzureDevOpsService:
         ORDER BY [System.Id]
         """
         
-        work_items = self.query_work_items(project, wiql)
+        work_items = self.query_work_items(project_id, wiql)
 
         if not work_items:
             return BacklogStructureResult(items=BacklogStructure())
@@ -202,7 +212,7 @@ class AzureDevOpsService:
                 "title": wi.fields.get(WorkItemProps.TITLE.value),
                 "type": wi.fields.get(WorkItemProps.WORK_ITEM_TYPE.value),
                 "assigned_to": assigned_to,
-                "url": self._web_url(project, wi.id),
+                "url": self._web_url(project_id, wi.id),
                 "original_estimate": wi.fields.get(WorkItemProps.ORIGINAL_ESTIMATE.value),
                 "children": []
             }

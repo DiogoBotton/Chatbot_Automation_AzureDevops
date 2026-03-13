@@ -5,10 +5,10 @@ from infrastructure.services.azure.azure_service import AzureDevOpsService
 from pydantic import BaseModel, Field
 
 from . import BaseHandler
-
+from uuid import UUID
 
 class Command(BaseModel):
-    project: str = Field(description="Nome exato do projeto no Azure DevOps", examples=["MeuProjeto"])
+    project_id: UUID = Field(description="ID do projeto no Azure DevOps (UUID). Use GET /projects para obter.")
     title: str = Field(description="Título da User Story", examples=["Como usuário, quero ..."])
     original_estimate: float = Field(
         description=(
@@ -30,6 +30,8 @@ class Chatbot(BaseHandler[Command, WorkItemResult]):
 
     def execute(self, request: Command) -> WorkItemResult:
         try:
+            project_name = self.azureService.get_project_by_id(request.project_id)
+
             default_dev_area = "Back-End"
 
             fields = {
@@ -41,11 +43,14 @@ class Chatbot(BaseHandler[Command, WorkItemResult]):
             }
 
             return self.azureService.create_work_item(
-                project=request.project,
+                project_id=request.project_id,
+                project_name=project_name,
                 work_item_type=WorkItemTypes.USER_STORY.value,
                 fields=fields,
                 parent_id=request.parent_id,
             )
 
+        except ValueError as e:
+            return WorkItemResult(error="PROJECT_NOT_FOUND", message=str(e))
         except Exception as e:
             return WorkItemResult(error="UNEXPECTED_ERROR", message=str(e))

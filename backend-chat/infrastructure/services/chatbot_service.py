@@ -1,3 +1,4 @@
+import json
 from typing import List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -5,6 +6,7 @@ from domains.enums.message_type import MessageType
 from domains.conversation_history import ConversationHistory
 from settings import Settings
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from infrastructure.services.llm_utils import has_error
 
 from infrastructure.constants.prompts import SYS_PROMPT_LLM_FINAL_RESPONSE, SYS_PROMPT_LLM_TOOLS
 
@@ -82,7 +84,7 @@ class ChatbotService:
             
             # Adiciona o response a lista de mensagens para o modelo saber que houve necessidade de chamar uma ferramenta
             messages.append(response)
-            
+            error = False
             # Caso o modelo precise chamar uma ferramenta
             for tool_call in response.tool_calls:
                 print(f"Chamando ferramenta: {tool_call['name']}")
@@ -92,7 +94,12 @@ class ChatbotService:
                     try:
                         # Caso achar a ferramenta, chama a função passando os parâmetros (args) necessários
                         tool_response = await tool_func.ainvoke(tool_call["args"])
+                        
+                        if has_error(tool_response):
+                            error = True
+                            tool_response = json.dumps(tool_response)
                     except Exception as e:
+                        error = True
                         tool_response = {"error": str(e)}
                         
                     # Adiciona o resultado da ferramenta como um ToolMessage para o modelo usar como contexto para responder a pergunta
@@ -105,7 +112,12 @@ class ChatbotService:
                         role=MessageType.TOOL,
                         content=str(tool_response),
                         tool_call_id=tool_call["id"]))
-        
+                    
+                    if error:
+                        break
+            if error:
+                break
+            
         return None, messages
     
     async def _execute_streaming(self, messages: List[BaseMessage], new_messages: List[ConversationHistory]):
