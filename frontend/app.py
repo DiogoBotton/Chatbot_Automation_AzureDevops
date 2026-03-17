@@ -5,10 +5,31 @@ import os
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
-# Configurações
 st.set_page_config(page_title="Seu assistente virtual 🤖", page_icon="🤖")
 st.title("Seu assistente virtual 🤖")
 
+# ── Seletor de projeto (obrigatório antes de usar o chat) ────────────────────
+if "projects" not in st.session_state:
+    resp = requests.get(f"{API_URL}/projects/")
+    resp.raise_for_status()
+    st.session_state.projects = resp.json()
+
+projects = st.session_state.projects
+project_options = {p["name"]: p for p in projects}
+
+with st.sidebar:
+    st.header("Projeto Azure DevOps")
+    selected_name = st.selectbox("Selecione o projeto:", list(project_options.keys()))
+    selected_project = project_options[selected_name]
+
+# Reseta conversa ao trocar de projeto
+if st.session_state.get("active_project_id") != selected_project["id"]:
+    st.session_state.active_project_id = selected_project["id"]
+    st.session_state.active_project_name = selected_project["name"]
+    st.session_state.conversation_id = None
+    st.session_state.messages = []
+
+# ── Estado de conversa ────────────────────────────────────────────────────────
 if "conversation_id" not in st.session_state:
     st.session_state.conversation_id = None
 
@@ -25,13 +46,15 @@ def ensure_conversation_id() -> str:
     conversation_id = response.json()["id"]
     st.session_state.conversation_id = conversation_id
     return conversation_id
-    
+
 def stream_chat_response(user_query: str, placeholder) -> str:
     conversation_id = ensure_conversation_id()
 
     payload = {
         "input": user_query,
         "conversation_id": conversation_id,
+        "project_id": st.session_state.active_project_id,
+        "project_name": st.session_state.active_project_name,
     }
 
     full_response = ""
@@ -62,7 +85,6 @@ for message in st.session_state.messages:
 user_query = st.chat_input("Digite sua mensagem aqui...")
 
 if user_query:
-    # Renderiza imediatamente a mensagem do usuário (UX melhor)
     with st.chat_message("human"):
         st.write(user_query)
         add_message(user_query, MessageType.USER.value)
@@ -72,3 +94,4 @@ if user_query:
         with st.spinner("Gerando resposta..."):
             ai_response = stream_chat_response(user_query, placeholder)
         add_message(ai_response, MessageType.ASSISTANT.value)
+

@@ -1,140 +1,131 @@
-import json
-from typing import List
+from typing import List, AsyncGenerator
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessageChunk, ToolMessage, SystemMessage
+from langchain.agents import create_agent
 from domains.enums.message_type import MessageType
 from domains.conversation_history import ConversationHistory
-from settings import Settings
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from infrastructure.constants.prompts import SYS_PROMPT
+from infrastructure.constants.prompts import get_system_prompt
+from infrastructure.services.mcp_manager import MCPManager
+
 
 class ChatbotService:
-    def __init__(self):
-        self.client_mcp = None
-        self.tools = []
-        self.tool_map = {}
+    """
+    Orquestra o agente ReAct com streaming real de tokens.
 
-        self.llm = None
-        self.llm_with_tools = None
-        self._initialized = False
+    Fluxo em duas fases:
+    1. Streaming: emite tokens de texto em tempo real + coleta chunks brutos
+    2. Persistência: reconstrói mensagens completas e popula new_messages
+    """
 
-    # TODO: Necessário inicializar apenas uma vez, pois isto demora.
-    async def _initialize(self):
-        if self._initialized:
-            return
-        
-        self.client_mcp = MultiServerMCPClient({
-            "azure_devops_api": {
-                "url": f"{Settings().API_TOOLS_URL}/mcp",
-                "transport": "sse"
-            }
-        })
-        
-        self.tools = await self.client_mcp.get_tools()
+    _agent = None
 
-        self.tool_map = {tool.name: tool for tool in self.tools}
+    @classmethod
+    def _get_agent(cls):
+        """Cria o agente na primeira chamada e reutiliza nas seguintes."""
+        if cls._agent is None:
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_retries=2)
+            cls._agent = create_agent(llm, tools=MCPManager.get_tools())
+        return cls._agent
 
-        self.llm, self.llm_with_tools = self._model_openai()
-        
-        self._initialized = True
+    def _build_messages(
+        self,
+        user_query: str,
+        chat_history: List[BaseMessage],
+        project_id: str | None,
+        project_name: str | None,
+    ) -> List[BaseMessage]:
+        """Monta a lista de mensagens com SystemMessage dinâmico baseado no projeto ativo."""
+        sys_prompt = get_system_prompt(project_id=project_id, project_name=project_name)
+        return [SystemMessage(content=sys_prompt)] + chat_history + [HumanMessage(content=user_query)]
 
-    def _model_openai(self, model_name = "gpt-4o-mini", temperature = 0):
+    def _collect_messages(self, raw_chunks: list, new_messages: List[ConversationHistory]) -> None:
         """
-        Acessa o modelo do Chat GPT pela API.
-        Retorna o modelo normal e o modelo com as ferramentas acopladas (bind_tools).
-            - O modelo normal é utilizado para responder perguntas simples, que não precisam de ferramentas.
-            - O modelo com ferramentas acopladas é utilizado para identificar quando o modelo precisa chamar uma ferramenta e qual ferramenta chamar.
-        """
-        llm = ChatOpenAI(model = model_name, temperature = temperature)
-        llm_with_tools = llm.bind_tools(self.tools)
-        return llm, llm_with_tools
+        Reconstrói mensagens completas a partir dos chunks brutos do agente
+        e popula new_messages na ordem correta para persistência no banco.
 
-    def _build_messages(self, user_query: str, chat_history: List[BaseMessage]):
+        Chamado APÓS o streaming terminar — separação clara entre stream e persistência.
         """
-        Gera a lista de mensagens para passar como contexto para o modelo. A lista é composta por:
-        - SystemMessage: mensagem de sistema (prompt) para orientar o comportamento do modelo
-        - BaseMessage: mensagens anteriores da conversa (chat_history)
-        - HumanMessage: mensagem atual do usuário (user_query)
-        """
+        current_ai: AIMessageChunk | None = None
 
-        return [SystemMessage(content=SYS_PROMPT)] + chat_history + [HumanMessage(content=user_query)]
+        for chunk in raw_chunks:
+            if isinstance(chunk, AIMessageChunk):
+                # Novo AIMessage (nova chamada LLM) → salva o anterior
+                if current_ai is not None and chunk.id != current_ai.id:
+                    self._persist_ai(current_ai, new_messages)
+                    current_ai = chunk
+                elif current_ai is None:
+                    current_ai = chunk
+                else:
+                    current_ai = current_ai + chunk
 
-    async def _execute_llm_with_tools(self, messages: List[BaseMessage], new_messages: List[ConversationHistory]):
-        # Identifica se o modelo precisa chamar uma ferramenta ou não
-        response = await self.llm_with_tools.ainvoke(messages)
-        
-        # Mensagem da resposta final do modelo, sem chamar a ferramenta
-        if not response.tool_calls:
-            print("Resposta final do modelo obtida.")
-            return response, messages
-        
-        # Mensagem de chamada de ferramentas
-        new_messages.append(ConversationHistory(
-            role=MessageType.ASSISTANT,
-            tool_calls=response.tool_calls))
-        
-        # Adiciona o response a lista de mensagens para o modelo saber que houve necessidade de chamar uma ferramenta
-        messages.append(response)
-        
-        # Caso o modelo precise chamar uma ferramenta
-        for tool_call in response.tool_calls:
-            print(f"Chamando ferramenta: {tool_call['name']}")
-            # Busca a função do tool_map (dicionário) pelo nome da ferramenta
-            tool_func = self.tool_map.get(tool_call["name"])
-            if tool_func:
-                try:
-                    # Caso achar a ferramenta, chama a função passando os parâmetros (args) necessários
-                    tool_response = await tool_func.ainvoke(tool_call["args"])
-                except Exception as e:
-                    tool_response = {"error": str(e)}
-                    
-                # Adiciona o resultado da ferramenta como um ToolMessage para o modelo usar como contexto para responder a pergunta
-                messages.append(ToolMessage(
-                    content=str(tool_response),
-                    tool_call_id=tool_call["id"])) # Necessário o tool_call_id para o modelo entender de qual chamada de ferramenta aquela resposta se refere
-                
-                # Mensagem de resultado da ferramenta
+            elif isinstance(chunk, ToolMessage):
+                # ToolMessage chega completo — salva o AIMessage pendente primeiro
+                if current_ai is not None:
+                    self._persist_ai(current_ai, new_messages)
+                    current_ai = None
+
                 new_messages.append(ConversationHistory(
                     role=MessageType.TOOL,
-                    content=str(tool_response),
-                    tool_call_id=tool_call["id"]))
-            
-        return None, messages
-    
-    async def _execute_streaming(self, messages: List[BaseMessage], new_messages: List[ConversationHistory]):
-        chunks = []
-        
-        # Finalmente, chama o modelo novamente (sem tools) passando toda a conversa (requisição para ferramenta + resposta) para gerar a resposta final
-        async for chunk in self.llm.astream(messages):
-            if chunk.content:
-                chunks.append(chunk.content)
-                yield chunk.content
-        
-        full_content = "".join(chunks)
-        
-        # Salva mensagem final do modelo
-        new_messages.append(ConversationHistory(
-            role=MessageType.ASSISTANT,
-            content=full_content))
+                    content=str(chunk.content),
+                    tool_call_id=chunk.tool_call_id,
+                ))
 
-    async def get_response_stream(self, user_query: str, chat_history: List[BaseMessage]) -> tuple[str, List[ConversationHistory]]:
-        # A edição de new_messages ocorre com referência de memória
-        new_messages = []
-        await self._initialize()
-        messages = self._build_messages(user_query, chat_history)
+        # Salva o último AIMessage (resposta final do agente)
+        if current_ai is not None:
+            self._persist_ai(current_ai, new_messages)
 
-        response, messages = await self._execute_llm_with_tools(messages, new_messages)
-        
-        if response:
-            async def generator():
-                for char in response.content:
-                    yield char
-                                
+    def _persist_ai(self, msg: AIMessageChunk, new_messages: List[ConversationHistory]) -> None:
+        """Converte um AIMessageChunk acumulado em ConversationHistory."""
+        if msg.tool_calls:
             new_messages.append(ConversationHistory(
                 role=MessageType.ASSISTANT,
-                content=response.content))
-            
-            return generator(), new_messages
-        
-        # Caso precise de chamar uma ferramenta, gera a resposta final com o contexto atualizado (mensagem do modelo + resposta da ferramenta)
-        return self._execute_streaming(messages, new_messages), new_messages
+                tool_calls=msg.tool_calls,
+            ))
+        elif msg.content:
+            new_messages.append(ConversationHistory(
+                role=MessageType.ASSISTANT,
+                content=msg.content,
+            ))
+
+    async def get_response_stream(
+        self,
+        user_query: str,
+        chat_history: List[BaseMessage],
+        project_id: str | None = None,
+        project_name: str | None = None,
+    ) -> tuple[AsyncGenerator[str, None], List[ConversationHistory]]:
+        """
+        Executa o agente ReAct com streaming real de tokens.
+
+        Fase 1 (streaming): itera os chunks do agente, emite tokens de texto
+        em tempo real e coleta todos os chunks brutos numa lista.
+
+        Fase 2 (persistência): após o stream completar, reconstrói as mensagens
+        completas (AIMessage com tool_calls, ToolMessage, resposta final) e
+        popula new_messages para o commit no banco.
+        """
+        new_messages: List[ConversationHistory] = []
+        input_messages = self._build_messages(user_query, chat_history, project_id, project_name)
+        agent = self._get_agent()
+
+        async def _stream() -> AsyncGenerator[str, None]:
+            raw_chunks: list = []
+
+            async for chunk, metadata in agent.astream(
+                {"messages": input_messages},
+                config={"recursion_limit": 80},
+                stream_mode="messages",
+            ):
+                if not metadata.get("langgraph_node"):
+                    continue
+
+                raw_chunks.append(chunk)
+
+                # Streaming real: emite apenas tokens de texto (não tool calls)
+                if isinstance(chunk, AIMessageChunk) and chunk.content and not chunk.tool_call_chunks:
+                    yield chunk.content
+
+            # Após o stream terminar: reconstrói e salva todas as mensagens
+            self._collect_messages(raw_chunks, new_messages)
+
+        return _stream(), new_messages

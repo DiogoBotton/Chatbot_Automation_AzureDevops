@@ -1,4 +1,3 @@
-from fastapi import Depends
 from infrastructure.dtos.work_items.backlog_structure_result import BacklogStructureResult
 from infrastructure.services.azure.azure_service import AzureDevOpsService
 from pydantic import BaseModel, Field
@@ -13,8 +12,8 @@ class Command(BaseModel):
 
 
 class Chatbot(BaseHandler[Command, BacklogStructureResult]):
-    def __init__(self, azureService: AzureDevOpsService = Depends()):
-        self.azureService = azureService
+    def __init__(self):
+        self.azureService = AzureDevOpsService()
 
     def execute(self, request: Command) -> BacklogStructureResult:
         try:

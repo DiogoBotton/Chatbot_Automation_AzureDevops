@@ -3,16 +3,14 @@ from uuid import UUID
 from azure.devops.v7_0.work_item_tracking.models import JsonPatchOperation
 from azure.devops.v7_0.work_item_tracking.models import Wiql
 from azure.devops.v7_0.work.models import TeamContext
-from fastapi import Depends
-from infrastructure.dtos.projects.projects_result import ProjectsResult
 from infrastructure.dtos.work_items.backlog_structure_result import BacklogStructure, BacklogStructureResult
 from infrastructure.dtos.work_items.work_item_result import WorkItemResult
 from infrastructure.enums.work_item import WorkItemProps, WorkItemTypes
 from infrastructure.services.azure.azure_client import AzureDevOpsClient
 
 class AzureDevOpsService:
-    def __init__(self, azure_client: AzureDevOpsClient = Depends()):
-        self.azure_client = azure_client
+    def __init__(self):
+        self.azure_client = AzureDevOpsClient()
         
     def get_allowed_fields(self, project: str, work_item_type: str):
         wit_type = self.azure_client.wit_client.get_work_item_type(project, work_item_type)
@@ -57,17 +55,12 @@ class AzureDevOpsService:
             raise ValueError(f"Projeto com ID '{project_id}' não encontrado.")
         return project.name
 
-    def list_projects(self) -> ProjectsResult:
+    def list_projects(self) -> list[dict]:
         projects = self.azure_client.core_client.get_projects()
-
-        return ProjectsResult(items=[
-            {
-                "id": project.id,
-                "name": project.name,
-                "state": project.state,
-            }
+        return [
+            {"id": project.id, "name": project.name, "state": project.state}
             for project in projects
-        ])
+        ]
     
     def create_patch_document(self, fields: dict, parent_id: int | None = None):
         patch_document = [

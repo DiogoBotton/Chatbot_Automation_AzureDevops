@@ -18,6 +18,8 @@ from . import BaseHandler
 class Command(BaseModel):
     input: str
     conversation_id: UUID
+    project_id: str | None = None
+    project_name: str | None = None
 
 # Handle
 class Chatbot(BaseHandler[Command, MessageResult]):
@@ -38,7 +40,7 @@ class Chatbot(BaseHandler[Command, MessageResult]):
         conversation_history: List[ConversationHistory] = (
                                     self.db.query(ConversationHistory)
                                     .filter(ConversationHistory.conversation_id == conversation.id)
-                                    .order_by(ConversationHistory.created_at.asc())
+                                    .order_by(ConversationHistory.id.asc())
                                     .all()
                                 ) if conversation.id else []
         
@@ -50,7 +52,9 @@ class Chatbot(BaseHandler[Command, MessageResult]):
             elif ch.role == MessageType.TOOL:
                 history.append(ToolMessage(ch.content, tool_call_id=ch.tool_call_id))
         
-        generator, new_messages = await self.chatbotService.get_response_stream(request.input, history)
+        generator, new_messages = await self.chatbotService.get_response_stream(
+            request.input, history, request.project_id, request.project_name
+        )
         
         async def wrapped_generator():
             full_response = ""

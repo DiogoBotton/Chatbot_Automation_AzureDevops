@@ -1,30 +1,15 @@
-from fastapi import FastAPI
-from fastapi_mcp import FastApiMCP
-from fastapi.middleware.cors import CORSMiddleware
-from features.work_items import work_items_controller
-from features.projects import projects_controller
+from mcp.server.fastmcp import FastMCP
 
-app = FastAPI(
-    title="API Tools",
-    docs_url="/docs",  # URL para disponibilização do Swagger UI
-)
+from tools.projects import register_project_tools
+from tools.work_items import register_work_item_tools
 
-# Libera o CORS da API para requisições via http
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*']
-)
+# Servidor MCP puro — expõe ferramentas Azure DevOps via SSE (sem FastAPI/Swagger)
+# Para debug/teste interativo local: uv run mcp dev main.py
+# O MCP Inspector abrirá no browser (http://localhost:5173) para chamar as tools manualmente.
+mcp = FastMCP("Azure DevOps Tools", host="0.0.0.0", port=5050)
 
-app.include_router(work_items_controller.router)
-app.include_router(projects_controller.router)
+register_project_tools(mcp)
+register_work_item_tools(mcp)
 
-mcp = FastApiMCP(
-    app,
-    name="API Tools MCP",
-    description="Servidor MCP expondo API"
-)
-
-mcp.mount()
+if __name__ == "__main__":
+    mcp.run(transport="sse")

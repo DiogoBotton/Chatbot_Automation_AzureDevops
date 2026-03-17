@@ -8,18 +8,17 @@ services:
       - AZURE_DEVOPS_ORGANIZATION_URL=${AZURE_DEVOPS_ORGANIZATION_URL}
       - AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT}
       - DATABASE_URL=${DATABASE_URL}
-      - API_TOOLS_URL=http://api-tools:5050 # Aponta a URL da API Tools para o container do api-chat (utiliza o nome do serviço "api-tools" definido no docker-compose como hostname)
+      - API_TOOLS_URL=http://mcp-tools:5050 # Aponta a URL da API Tools para o container do api-chat (utiliza o nome do serviço "mcp-tools" definido no docker-compose como hostname)
     ports:
       - "5000:5000"
     networks:
       - app_network
   
-  api-tools:
+  mcp-tools:
     build:
       context: ./backend-tools # Configura o contexto
       dockerfile: Dockerfile # A partir do contexto, indica o caminho até o Dockerfile
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY} # Passa a variável de ambiente do host para o container
       - AZURE_DEVOPS_ORGANIZATION_URL=${AZURE_DEVOPS_ORGANIZATION_URL}
       - AZURE_DEVOPS_PAT=${AZURE_DEVOPS_PAT}
     ports:

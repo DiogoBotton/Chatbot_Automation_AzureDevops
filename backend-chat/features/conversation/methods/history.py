@@ -23,7 +23,7 @@ class ChatHistory(BaseHandler[Query, MessageHistory]):
         conversation_history: List[ConversationHistory] = (
                                 self.db.query(ConversationHistory)
                                 .filter(ConversationHistory.conversation_id == request.conversation_id)
-                                .order_by(ConversationHistory.created_at.asc())
+                                .order_by(ConversationHistory.id.asc())
                                 .all())
         
         for ch in conversation_history:
