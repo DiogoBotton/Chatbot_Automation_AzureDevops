@@ -1,6 +1,7 @@
 from typing import List
 from uuid import UUID
 from fastapi import Depends, HTTPException
+import logging
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
@@ -57,10 +58,13 @@ class Chatbot(BaseHandler[Command, MessageResult]):
         )
         
         async def wrapped_generator():
-            full_response = ""
-            async for chunk in generator:
-                full_response += chunk
-                yield chunk
+            try:
+                async for chunk in generator:
+                    yield chunk
+            except Exception as e:
+                logging.error("Erro no stream", exc_info=e)
+                yield "\n[Erro ao processar resposta]"
+                return  # Não commita em caso de erro
             
             # Salva as novas mensagens no banco
             conversation.conversation_histories.append(ConversationHistory(role=MessageType.USER, content=request.input))
